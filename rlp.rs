@@ -2,7 +2,8 @@
 // specs: https://github.com/ethereum/wiki/wiki/%5BEnglish%5D-RLP
 
 use std::num;
-use std::io::extensions::{u64_from_be_bytes, u64_to_be_bytes};
+use std::io::BufReader;
+use std::io::extensions::u64_to_be_bytes;
 
 pub enum RlpEncodable {
   Binary(Vec<u8>),
@@ -14,6 +15,8 @@ pub struct Rlp(Vec<u8>);
 static BINARY_OFFSET: u8 = 128;
 static LIST_OFFSET: u8   = 192;
 static LENGTH_OFFSET: u8 = 55;
+
+
 
 impl RlpEncodable {
   pub fn encode(self) -> Rlp {
@@ -48,6 +51,8 @@ impl RlpEncodable {
   }
 }
 
+
+
 impl Rlp {
   fn into_vec(self) -> Vec<u8> {
     let Rlp(vec) = self;
@@ -55,39 +60,47 @@ impl Rlp {
   }
 
   pub fn decode(self) -> RlpEncodable {
-    let mut res:Vec<RlpEncodable> = Vec::new();
-    let Rlp(vec) = self;
-    let mut reader = vec.move_iter();
-    loop {
-      match reader.next() {
-        None => break,
-        Some(byte) => {
-          let val = if byte < 0xb8 {
-            let length = if byte <= 0x7f {
-              0
-            } else {
-              (reader.next().unwrap() - BINARY_OFFSET) as uint
-            };
-            Binary(reader.take(length).collect())
+    let vec = self.into_vec();
+    let mut reader = BufReader::new(vec.as_slice());
+    Rlp::decode_with_bufreader(&mut reader, vec.len())
+  }
 
+  fn decode_with_bufreader(reader: &mut BufReader, limit: uint) -> RlpEncodable {
+    let mut counter: uint = 0;
+    let mut res:Vec<RlpEncodable> = Vec::new();
+    while counter < limit {
+      match reader.read_byte() {
+        Err(_) => break,
+
+        // Binary
+        Ok(byte) if byte < 0xb8 => {
+          let length = if byte <= 0x7f {
+            0u
           } else {
-            let length = if byte <= 0xbf {
-              (reader.next().unwrap() - LIST_OFFSET) as uint
-            } else {
-              let lengthOfLength = (reader.next().unwrap() - LIST_OFFSET - LENGTH_OFFSET) as uint;
-              let lengthB = reader.take(lengthOfLength).collect::<Vec<u8>>().as_slice();
-              u64_from_be_bytes(lengthB, 0, lengthOfLength) as uint
-            };
-            Rlp(reader.take(length).collect()).decode()
+            (reader.read_u8().unwrap() - BINARY_OFFSET) as uint
           };
-          res.push(val);
+          counter += length;
+          res.push(Binary(reader.read_exact(length).unwrap()));
+        }
+
+        // List
+        Ok(byte) => {
+          let length = if byte <= 0xbf {
+            (reader.read_u8().unwrap() - LIST_OFFSET) as uint
+          } else {
+            let lengthOfLength = (reader.read_u8().unwrap() - LIST_OFFSET - LENGTH_OFFSET) as uint;
+            reader.read_be_uint_n(lengthOfLength).unwrap() as uint
+          };
+          counter += length;
+          res.push(Rlp::decode_with_bufreader(reader, length));
         }
       }
     }
-
-    return if res.len() == 1 { res.pop().unwrap() } else { List(res) };
+    if res.len() == 1 { res.pop().unwrap() } else { List(res) }
   }
 }
+
+
 
 fn main() {
 
