@@ -40,10 +40,10 @@ impl RlpEncodable {
     if length < 56 {
       return vec![length as u8 + offset];
     }
-    for lengthOfLength in range(1u, 9) {
-      if length < num::pow(32u, lengthOfLength) {
-        let mut data = vec![lengthOfLength as u8 + offset + LENGTH_OFFSET];
-        u64_to_be_bytes(length as u64, lengthOfLength, |v| data.push_all(v));
+    for length_of_length in range(1u, 9) {
+      if length < num::pow(32u, length_of_length) {
+        let mut data = vec![length_of_length as u8 + offset + LENGTH_OFFSET];
+        u64_to_be_bytes(length as u64, length_of_length, |v| data.push_all(v));
         return data;
       }
     }
@@ -88,8 +88,8 @@ impl Rlp {
           let length = if byte <= 0xbf {
             (reader.read_u8().unwrap() - LIST_OFFSET) as uint
           } else {
-            let lengthOfLength = (reader.read_u8().unwrap() - LIST_OFFSET - LENGTH_OFFSET) as uint;
-            reader.read_be_uint_n(lengthOfLength).unwrap() as uint
+            let length_of_length = (reader.read_u8().unwrap() - LIST_OFFSET - LENGTH_OFFSET) as uint;
+            reader.read_be_uint_n(length_of_length).unwrap() as uint
           };
           counter += length;
           res.push(Rlp::decode_with_bufreader(reader, length));
