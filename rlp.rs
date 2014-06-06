@@ -10,6 +10,7 @@ pub enum RlpEncodable {
   List(Vec<RlpEncodable>)
 }
 
+#[deriving(Eq)]
 pub struct Rlp(Vec<u8>);
 
 static BINARY_OFFSET: u8 = 128;
@@ -102,6 +103,11 @@ impl Rlp {
 
 
 
-fn main() {
-
+#[test]
+fn rlp_encodage() {
+  assert!(Binary(vec![]).encode() == Rlp(vec![0x80]));
+  assert!(Binary(String::from_str("dog").into_bytes()).encode() == Rlp(vec![0x83, 0x64, 0x6f, 0x67]));
+  assert!(List(vec![Binary(String::from_str("cat").into_bytes()), Binary(String::from_str("dog").into_bytes())]).encode() == Rlp(vec![0xc8, 0x83, 0x63, 0x61, 0x74, 0x83, 0x64, 0x6f, 0x67]));
+  assert!(List(vec![]).encode() == Rlp(vec![0xc0]));
+  assert!(List(vec![List(vec![]), List(vec![List(vec![])]), List(vec![List(vec![]), List(vec![List(vec![])])])]).encode() == Rlp(vec![0xc7, 0xc0, 0xc1, 0xc0, 0xc3, 0xc0, 0xc1, 0xc0]));
 }
