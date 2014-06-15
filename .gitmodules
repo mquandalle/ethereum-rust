@@ -1,0 +1,3 @@
+[submodule "lib/leveldb"]
+	path = lib/leveldb
+	url = git@github.com:skade/leveldb.git
