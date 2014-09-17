@@ -1,0 +1,7 @@
+[package]
+name = "ethereum"
+version = "0.0.1"
+authors = [ "maxime@quandalle.com" ]
+
+[dependencies.leveldb]
+git = "https://github.com/andrew-d/leveldb-rs"

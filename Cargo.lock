@@ -1,0 +1,12 @@
+[root]
+name = "ethereum"
+version = "0.0.1"
+dependencies = [
+ "leveldb 0.0.1 (git+https://github.com/andrew-d/leveldb-rs#c892f0edc742573babe86a0cdde1bca807fdd1dc)",
+]
+
+[[package]]
+name = "leveldb"
+version = "0.0.1"
+source = "git+https://github.com/andrew-d/leveldb-rs#c892f0edc742573babe86a0cdde1bca807fdd1dc"
+

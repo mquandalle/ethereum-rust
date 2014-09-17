@@ -10,6 +10,7 @@ pub enum RlpEncodable {
   List(Vec<RlpEncodable>)
 }
 
+#[deriving(PartialEq)]
 #[deriving(Eq)]
 pub struct Rlp(Vec<u8>);
 
@@ -23,13 +24,13 @@ impl RlpEncodable {
   pub fn encode(self) -> Rlp {
     Rlp(match self {
       Binary(v) => {
-        if v.len() == 1 && v.get(0) < &BINARY_OFFSET { v }
+        if v.len() == 1 && v[0] < BINARY_OFFSET { v }
         else { RlpEncodable::encode_length(v.len(), BINARY_OFFSET) + v }
       },
 
       List(v) => {
         let mut data:Vec<u8> = Vec::new();
-        for item in v.move_iter() {
+        for item in v.into_iter() {
           data.push_all_move(item.encode().into_vec());
         }
         RlpEncodable::encode_length(data.len(), LIST_OFFSET) + data
