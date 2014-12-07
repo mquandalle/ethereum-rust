@@ -2,6 +2,7 @@
 #[allow(dead_code)]
 
 mod rlp;
+mod trie;
 
 #[cfg(not(test))]
 fn main() {

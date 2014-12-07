@@ -1,112 +1,171 @@
 // A modified Radix+Merkle tree to encode the state of all contracts
-#![feature(struct_variant)]
 
-use lib::leveldb::database;
+extern crate "leveldb-rs" as leveldb;
 
-type Key   = Vec<u8>;
-type Value = Vec<u8>;
-type Ref   = Vec<u8>;
+use std::path::posix::Path;
+use self::leveldb::DB;
+use std::slice::bytes;
+use rlp::{Rlpable, RlpEncodable, RlpDecodable};
+use rlp::RlpEncodable::{Binary, List};
+use self::TrieValue::{Reference, InlineValue};
+use self::Node::{Blank, Extension, Branch};
 
+
+
+#[deriving(PartialEq, Eq)]
+struct Key {
+  value: Vec<u8>,
+  nibble: u8
+}
+
+// impl Rlpable for Key {
+//   fn encode(self) -> RlpEncodable {
+//     Binary(self.value)
+//   }
+
+//   fn decode(source: RlpDecodable) -> Key {
+//     Key{value: source.to_vec(), nibble: 0}
+//   }
+// }
+
+type Ref = [u8, ..32];
+
+#[deriving(PartialEq, Eq)]
+enum TrieValue {
+  Reference(Ref),
+  InlineValue(RlpDecodable)
+}
+
+// impl Rlpable for TrieValue {
+//   fn encode(self) -> RlpEncodable {
+//     match self {
+//       Reference(r) => Binary(r.to_vec()),
+//       InlineValue(r) => Binary(r.to_vec())
+//     }
+//   }
+
+//   fn decode(source: RlpDecodable) -> TrieValue {
+//     match source.to_vec().len() {
+//       x if x < 32 => InlineValue(source),
+//       x if x == 32 => Reference({
+//         let mut x: [u8, ..32] = [0, ..32];
+//         bytes::copy_memory(x.as_mut_slice(), source.to_vec().as_slice());
+//         x
+//       }),
+//       _ => panic!("Too large trie value")
+//     }
+//   }
+// }
+
+#[deriving(PartialEq, Eq)]
 enum Node {
   Blank,
-  Leaf{ key: Key, value: Value },
-  Extension{ key: Key, value: Ref },
-  Branch{ refs: [Ref, ..16], value: Value },
+  Extension {
+    key: Key,
+    value: TrieValue
+  },
+  Branch {
+    branchs: [Option<TrieValue>, ..16],
+    value: Option<Key> // Should be <InlineValue>
+  },
 }
 
-impl Node {
-  fn isTerminal(&self) -> bool {
-    match *self {
-      Blank | Leaf{..} => true,
-      Extension{..} | Branch{..} => false
-    }
-  }
-}
+// impl Rlpable for Node {
+//   fn encode(self) -> RlpEncodable {
+//     match self {
+//       Blank => Binary(vec![]),
+//       Extension{ key: k, value: v } => List(vec![k.encode(), v.encode()]),
+//       Branch{ branchs: branchs, value: v} => {
+//         let l:Vec<RlpEncodable> = Vec::new();
+//         for b in branchs.iter() {
+//           match *b {
+//             Some(x) => { l.push(x.encode()); }
+//             None => { l.push(Binary(vec![])); }
+//           }
+//         }
+//         match v {
+//           Some(x) => { l.push(x.encode()); }
+//           None => { l.push(Binary(vec![])); }
+//         }
+//         List(l)
+//       }
+//     }
+//   }
 
-struct Trie {
-  database: database,
-  root_id: Ref
+//   fn decode(source: RlpDecodable) -> Node {
+//     Blank
+//   }
+// }
+
+// impl Node {
+//   pub fn from_vec(source: Vec<u8>) -> Node {
+//     let rlp_data = Rlp::new(source).decode();
+//       match rlp_data {
+//         List(v) => {
+//           match v.len() {
+//             2 => {
+//               let key = match v[0] {
+//                 Binary(a) => Key::from_vec(a),
+//                 List(_) => panic!("Unexpected value")
+//               };
+//               let value = match v[1] {
+
+//               };
+
+//               Extension{ key: key, value: TrieValue::from_vec(v[1])}
+//             },
+//             17 => Blank,
+//             _ => panic!("Unexpected value")
+//           }
+//         }
+//         Binary(_) => panic!("Unexpected value"),
+//       }
+//   }
+// }
+
+pub struct Trie {
+  storage: DB,
+  root_hash: Option<Ref>
 }
 
 impl Trie {
-  pub fn new(database: database, root_id: Ref) -> Trie {
-    Trie {
-      database: database,
-      root_id: root_id
+  fn new(path: &Path, root_hash: Option<Ref>) -> Trie {
+    match DB::create(path) {
+      Ok(db) => Trie { storage: db, root_hash: root_hash },
+      Err(why) => panic!("Error creating DB: {}", why),
     }
   }
 
-  pub fn get(&self, key: Key) -> Value {
-    self.get_from_node(self.root_id, key)
+  fn get_root_node(&self) -> Node {
+    self.get_node(&self.root_hash)
   }
 
-  pub fn set(&self, key: Key, value: Value) {
-    self.set_from_node(self.root_id, key, value)
-  }
-
-  pub fn remove(&self, key: Key) {
-    self.set_from_node(self.root_id, key, Value(vec![]))
-  }
-
-
-
-  fn get_node(&self, node_id: Ref) -> Node {
-    self.database.get(node_id.unwrap())
-  }
-
-  fn get_from_node(&self, node_id: Ref, search: Key) -> Value {
-    let node = self.get_node(node_id);
-    let null_vec = vec![0u8, ..32];
-    match node {
-      Blank => null_vec,
-
-      Leaf{key, value} => {
-        if key == search { value }
-        else { null_vec }
-      },
-
-      Extension{key, value} => {
-        // XXX
-        self.get_from_node(value, search.split())
-      }
-
-      Branch{refs, value} => {
-        if search.len() == 0 {
-          node.value
-        } else {
-          let child_id = refs[search[0]];
-          self.get_from_node(child_id, search.slice_from(1).to_vec())
+  fn get_node(&self, key: &Option<Ref>) -> Node {
+    match key {
+      &None => Blank,
+      &Some(ref key) => {
+        match self.storage.get(key.as_slice()) {
+          Err(why) => panic!("Error reading the DB for key {}, {}", key, why),
+          Ok(None) => Blank,
+          Ok(Some(raw)) => Blank
         }
       }
     }
   }
+}
 
-  fn set_from_node(&self, node_id: Ref, key: Key, value: Value) -> Node {
-    let node = self.get_node(node_id);
-    match node {
-      Blank => {
-        [pack_nibbles(with_terminator(key)), value.unwrap()]
-      },
+#[cfg(test)]
+mod tests {
+  use std::io::TempDir;
+  use super::Trie;
+  use super::Node::Blank;
 
-      Leaf => {
-
-      },
-
-      Extension => {
-
-      },
-
-      Branch => {
-        if key == "" {
-          node.value = value
-        } else {
-          let child = self.update_and_delete_storage()
-        }
-      }
-    }
+  fn get_tmp_trie(name: &str) -> Trie {
+    Trie::new(TempDir::new(name).unwrap().path(), None)
   }
 
-  fn update_and_delete_storage(&self, node: Node, key: Key, value: Value) {
-
+  #[test]
+  fn get_blank_root_node() {
+    assert!(get_tmp_trie("empty").get_root_node() == Blank)
   }
 }
